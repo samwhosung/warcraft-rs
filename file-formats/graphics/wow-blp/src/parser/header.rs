@@ -31,12 +31,15 @@ pub fn parse_header(input: &[u8]) -> ParseResult<BlpHeader> {
         let alpha_type_raw = reader
             .read_u8()
             .map_err(|e| e.with_context("alpha_type field"))?;
-        let alpha_type = alpha_type_raw.try_into().map_err(|_| {
-            warn!("Unknown alpha_type value {alpha_type_raw}, treating as raw value");
-            // For now, we'll handle unknown alpha types gracefully
-            // In a production system, you might want to return an error or use a fallback
-            Error::UnknownAlphaType(alpha_type_raw)
-        })?;
+        // Unknown alpha_type is not fatal: the actual presence/precision of alpha is governed by
+        // alpha_bits (alpha_type only selects the DXT alpha variant). Real 1.12-era BLP2 textures —
+        // e.g. palettized particle/effect art with alpha_bits == 0 — carry a stale alpha_type byte
+        // (value 2 observed), which the strict enum rejected, aborting the whole decode. Fall back to
+        // `None` (no separate alpha) rather than erroring, so these files load.
+        let alpha_type = alpha_type_raw.try_into().unwrap_or_else(|_| {
+            warn!("Unknown BLP2 alpha_type {alpha_type_raw}; defaulting to None (no separate alpha)");
+            AlphaType::None
+        });
         let has_mipmaps = reader
             .read_u8()
             .map_err(|e| e.with_context("has_mipmaps field"))?;
